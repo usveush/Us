@@ -17,7 +17,7 @@ db.prepare(`
 
 console.log('متصل بقاعدة البيانات المحلية (SQLite) بنجاح.');
 
-// تعريف الأوامر بصيغة الـ Slash Commands
+// تعريف الأوامر بالكامل مع إضافة الأيقونة والإيموجي
 const commands = [
     new SlashCommandBuilder()
         .setName('giverole')
@@ -44,6 +44,8 @@ const commands = [
         .addSubcommand(sub => sub.setName('name').setDescription('تغيير اسم الرتبة').addStringOption(opt => opt.setName('new_name').setDescription('الاسم الجديد').setRequired(true)))
         .addSubcommand(sub => sub.setName('color').setDescription('تغيير لون الرتبة (Hex)').addStringOption(opt => opt.setName('hex').setDescription('كود اللون مثل #FF0000').setRequired(true)))
         .addSubcommand(sub => sub.setName('resetcolor').setDescription('إعادة اللون الافتراضي للرتبة'))
+        .addSubcommand(sub => sub.setName('icon').setDescription('تغيير أيقونة الرتبة بصورة (يتطلب سيرفر Boost Tier 2)').addAttachmentOption(opt => opt.setName('image').setDescription('الصورة الجديدة للرتبة (اتركها فارغة للإزالة)')))
+        .addSubcommand(sub => sub.setName('emoji').setDescription('تغيير إيموجي الرتبة الموحد (يتطلب سيرفر Boost Tier 2)').addStringOption(opt => opt.setName('emoji_char').setDescription('ضع إيموجي أساسي واحد فقط').setRequired(true)))
         .addSubcommand(sub => sub.setName('info').setDescription('عرض معلومات رتبتك المخصصة'))
 ].map(command => command.toJSON());
 
@@ -51,7 +53,7 @@ const commands = [
 async function deployCommandsToAllGuilds() {
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     try {
-        console.log('جاري تحديث الأوامر في جميع السيرفرات الحالية...');
+        console.log('جاري إعادة تسجيل وتحديث الأوامر في السيرفرات...');
         const guilds = await client.guilds.fetch();
         
         for (const [guildId, guild] of guilds) {
@@ -59,20 +61,18 @@ async function deployCommandsToAllGuilds() {
                 Routes.applicationGuildCommands(client.user.id, guildId),
                 { body: commands }
             );
-            console.log(`تم تسجيل الأوامر بنجاح في سيرفر: ${guild.name}`);
+            console.log(`تم تحديث الأوامر بنجاح في سيرفر: ${guild.name}`);
         }
     } catch (error) {
         console.error('حدث خطأ أثناء تسجيل الأوامر تلقائيًا:', error);
     }
 }
 
-// تشغيل دالة التسجيل عند جاهزية البوت
 client.once('ready', async () => {
     console.log(`تم تشغيل البوت بنجاح باسم: ${client.user.tag}`);
     await deployCommandsToAllGuilds();
 });
 
-// تسجيل الأوامر تلقائيًا عند دخول البوت سيرفر جديد
 client.on('guildCreate', async (guild) => {
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     try {
@@ -86,7 +86,6 @@ client.on('guildCreate', async (guild) => {
     }
 });
 
-// معالجة تفاعلات الأوامر وتنفيذها
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
@@ -170,9 +169,7 @@ client.on('interactionCreate', async interaction => {
             if (subcommand === 'name') {
                 const newName = options.getString('new_name');
                 await userRole.setName(newName);
-                
                 db.prepare('UPDATE role_mappings SET lastUpdated = ? WHERE userId = ?').run(now, user.id);
-                
                 return interaction.reply({ embeds: [replyEmbed('تم التحديث', `تم تغيير اسم رتبتك بنجاح إلى: **${newName}**`, 0x00ff00)] });
             }
 
@@ -181,18 +178,36 @@ client.on('interactionCreate', async interaction => {
                 if (!/^#?[0-9A-F]{6}$/i.test(hexColor)) {
                     return interaction.reply({ embeds: [replyEmbed('خطأ في اللون', 'يرجى إدخال كود اللون بشكل صحيح (مثال: #FF0000)', 0xff0000)], ephemeral: true });
                 }
-                
                 await userRole.setColor(hexColor);
                 db.prepare('UPDATE role_mappings SET lastUpdated = ? WHERE userId = ?').run(now, user.id);
-                
                 return interaction.reply({ embeds: [replyEmbed('تم التحديث', `تم تغيير لون رتبتك بنجاح إلى: **${hexColor}**`, 0x00ff00)] });
             }
 
             if (subcommand === 'resetcolor') {
                 await userRole.setColor(0);
                 db.prepare('UPDATE role_mappings SET lastUpdated = ? WHERE userId = ?').run(now, user.id);
-                
                 return interaction.reply({ embeds: [replyEmbed('تم إعادة تعيين اللون', 'تم إرجاع لون الرتبة إلى الافتراضي.', 0x00ff00)] });
+            }
+
+            if (subcommand === 'icon') {
+                const attachment = options.getAttachment('image');
+                
+                if (!attachment) {
+                    await userRole.setIcon(null);
+                    db.prepare('UPDATE role_mappings SET lastUpdated = ? WHERE userId = ?').run(now, user.id);
+                    return interaction.reply({ embeds: [replyEmbed('تم تحديث الأيقونة', 'تم إزالة أيقونة الرتبة بنجاح.', 0x00ff00)] });
+                }
+
+                await userRole.setIcon(attachment.url);
+                db.prepare('UPDATE role_mappings SET lastUpdated = ? WHERE userId = ?').run(now, user.id);
+                return interaction.reply({ embeds: [replyEmbed('تم تحديث الأيقونة', 'تم تعيين الصورة كأيقونة لرتبتك بنجاح.', 0x00ff00)] });
+            }
+
+            if (subcommand === 'emoji') {
+                const emojiChar = options.getString('emoji_char');
+                await userRole.setUnicodeEmoji(emojiChar);
+                db.prepare('UPDATE role_mappings SET lastUpdated = ? WHERE userId = ?').run(now, user.id);
+                return interaction.reply({ embeds: [replyEmbed('تم تحديث الرمز', `تم تعيين الرمز ${emojiChar} لرتبتك المخصصة.`, 0x00ff00)] });
             }
 
             if (subcommand === 'info') {
@@ -212,8 +227,12 @@ client.on('interactionCreate', async interaction => {
             }
 
         } catch (error) {
+            // مسك الأخطاء الشائعة مثل عدم دعم السيرفر لخاصية الأيقونات (بدون Boost كافٍ)
+            if (error.code === 50035 || error.message.includes('Boost')) {
+                return interaction.reply({ embeds: [replyEmbed('ميزة غير مدعومة', 'فشل تعديل الأيقونة/الإيموجي. السيرفر الحالي لا يملك مستوى تعزيز (Server Boost Tier 2) لتفعيل هذه الخاصية للرتب.', 0xff0000)], ephemeral: true });
+            }
             console.error(error);
-            return interaction.reply({ embeds: [replyEmbed('فشل في التعديل', 'حدث خطأ داخلي أثناء محاولة التعديل، يرجى التحقق من ترتيب رتبة البوت بالسيرفر.', 0xff0000)], ephemeral: true });
+            return interaction.reply({ embeds: [replyEmbed('فشل في التعديل', 'حدث خطأ غير متوقع أثناء محاولة التعديل، يرجى مراجعة الإدارة والتأكد من رتبة البوت.', 0xff0000)], ephemeral: true });
         }
     }
 });
