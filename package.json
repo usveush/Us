@@ -1,0 +1,14 @@
+{
+  "name": "discord-custom-roles-bot",
+  "version": "1.0.0",
+  "description": "Custom Roles Management Bot using SQLite with Auto Deploy",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.0",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.5"
+  }
+}
